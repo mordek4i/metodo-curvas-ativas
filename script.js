@@ -79,7 +79,6 @@ document.addEventListener('DOMContentLoaded', () => {
     pixModal.setAttribute('aria-hidden', 'false');
     document.body.style.overflow = 'hidden';
 
-    // Focar no primeiro campo
     const firstInput = document.getElementById('pixCustomerName');
     if (firstInput) setTimeout(() => firstInput.focus(), 150);
   }
@@ -124,6 +123,25 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /* ==================================================
+     HELPER: FETCH SEGURO PARA TRATAR ERROS DE JSON E HTML
+     ================================================== */
+  async function safeFetchJson(url, options) {
+    const response = await fetch(url, options);
+    const contentType = response.headers.get('content-type') || '';
+
+    if (!contentType.includes('application/json')) {
+      const text = await response.text();
+      if (text.includes('Cannot GET') || text.includes('Cannot POST') || text.includes('404') || text.includes('The page')) {
+        throw new Error('Servidor backend não encontrado. Certifique-se de estar rodando o comando "npm start" e abrindo http://localhost:3000');
+      }
+      throw new Error('O servidor retornou uma resposta inesperada. Tente novamente.');
+    }
+
+    const data = await response.json();
+    return { ok: response.ok, status: response.status, data };
+  }
+
+  /* ==================================================
      4. SUBMISSÃO DO FORMULÁRIO E GERAÇÃO DO PIX
      ================================================== */
   if (pixForm) {
@@ -150,15 +168,13 @@ document.addEventListener('DOMContentLoaded', () => {
       if (pixQrContent) pixQrContent.style.display = 'none';
 
       try {
-        const response = await fetch('/api/pix/create', {
+        const { ok, data } = await safeFetchJson('/api/pix/create', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name, email, phone })
         });
 
-        const data = await response.json();
-
-        if (!response.ok || !data.success) {
+        if (!ok || !data.success) {
           throw new Error(data.error || 'Não foi possível gerar o PIX. Verifique os dados digitados.');
         }
 
@@ -172,7 +188,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Preencher campo copia e cola
         pixCopyInput.value = data.qr_code || '';
 
-        // Exibir tela do PIX
+        // Exibir conteúdo do PIX
         if (pixLoadingState) pixLoadingState.style.display = 'none';
         if (pixQrContent) pixQrContent.style.display = 'block';
 
@@ -243,10 +259,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     pollingInterval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/pix/status/${paymentId}`);
-        const data = await res.json();
+        const { ok, data } = await safeFetchJson(`/api/pix/status/${paymentId}`);
 
-        if (data.success && (data.approved || data.status === 'approved')) {
+        if (ok && data.success && (data.approved || data.status === 'approved')) {
           stopPolling();
           stopCountdown();
 
